@@ -82,17 +82,26 @@ class Ensembler(object):
 
         for train_index, valid_index in kf.split(self.training_data, self.y_enc):
             for level in range(self.levels):
-                for model in self.model_dict[level]:
+                for model_num, model in enumerate(self.model_dict[level]):
                     model.fit(self.training_data[train_index], self.y_enc[train_index])
+
                     if num_classes == 2 and self.task_type == 'classification':
                         temp_train_predictions = model.predict_proba(self.training_data[valid_index])[:, 1]
                         temp_test_predictions = model.predict_proba(self.test_data)[:, 1]
+                        train_prediction_dict[level][valid_index, model_num] = temp_train_predictions
+                        test_prediction_dict[level][valid_index, model_num] += temp_test_predictions
+
                     elif num_classes > 2 and self.task_type == 'classification':
                         temp_train_predictions = model.predict_proba(self.training_data[valid_index])
                         temp_test_predictions = model.predict_proba(self.test_data)
+                        train_prediction_dict[level][valid_index, (model_num*num_classes):(model_num*num_classes) + num_classes] = temp_train_predictions
+                        test_prediction_dict[level][valid_index, (model_num * num_classes):(model_num * num_classes) + num_classes] = temp_test_predictions
+
                     else:
                         temp_train_predictions = model.predict(self.training_data[valid_index])
                         temp_test_predictions = model.predict(self.test_data)
+                        train_prediction_dict[level][valid_index, model_num] = temp_train_predictions
+                        test_prediction_dict[level][valid_index, model_num] += temp_test_predictions
 
     def predict(self):
         pass
