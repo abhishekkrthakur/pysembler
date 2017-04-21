@@ -82,24 +82,31 @@ class Ensembler(object):
         foldnum = 1
         for train_index, valid_index in kf.split(self.training_data, self.y_enc):
             for level in range(self.levels):
+                if level == 0:
+                    temp_train = self.training_data
+                    temp_test = self.test_data
+                else:
+                    temp_train = train_prediction_dict[level - 1]
+                    temp_test = test_prediction_dict[level - 1]
+
                 for model_num, model in enumerate(self.model_dict[level]):
 
                     logger.info("Fold # %d. Training Level %d. Model # %d", foldnum, level, model_num)
-                    model.fit(self.training_data[train_index], self.y_enc[train_index])
+                    model.fit(temp_train[train_index], self.y_enc[train_index])
 
                     logger.info("Fold # %d. Predicting Level %d. Model # %d", foldnum, level, model_num)
 
                     if self.task_type == 'classification':
-                        temp_train_predictions = model.predict_proba(self.training_data[valid_index])
-                        temp_test_predictions = model.predict_proba(self.test_data)
+                        temp_train_predictions = model.predict_proba(temp_train[valid_index])
+                        temp_test_predictions = model.predict_proba(temp_test)
                         train_prediction_dict[level][valid_index, (model_num*num_classes):
                                                      (model_num*num_classes) + num_classes] = temp_train_predictions
                         test_prediction_dict[level][:, (model_num * num_classes):
                                                     (model_num * num_classes) + num_classes] = temp_test_predictions
 
                     else:
-                        temp_train_predictions = model.predict(self.training_data[valid_index])
-                        temp_test_predictions = model.predict(self.test_data)
+                        temp_train_predictions = model.predict(temp_train[valid_index])
+                        temp_test_predictions = model.predict(temp_test)
                         train_prediction_dict[level][valid_index, model_num] = temp_train_predictions
                         test_prediction_dict[level][:, model_num] += temp_test_predictions
             foldnum += 1
