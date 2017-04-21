@@ -42,4 +42,10 @@ class Ensembler(object):
 if __name__ == '__main__':
     from sklearn import ensemble, linear_model
 
-    model_dict = {}
+    model_dict = {1: [ensemble.RandomForestClassifier(),
+                      ensemble.ExtraTreesClassifier(),
+                      linear_model.LogisticRegression()],
+
+                  2: [ensemble.RandomForestClassifier(), ensemble.GradientBoostingClassifier()],
+
+                  3: [linear_model.LogisticRegression()]}
