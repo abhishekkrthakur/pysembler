@@ -4,6 +4,8 @@ from sklearn import ensemble, linear_model
 from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import StratifiedKFold, KFold
+import pandas as pd
+import os
 import sys
 import logging
 
@@ -48,6 +50,7 @@ class Ensembler(object):
         :param test_data: test data in the same format as training data
         :return: chain of models to be used in prediction
         """
+
         self.training_data = training_data
         self.test_data = test_data
         self.y = y
@@ -58,12 +61,8 @@ class Ensembler(object):
             self.lbl_enc = LabelEncoder()
             self.y_enc = self.lbl_enc.fit_transform(self.y)
             kf = StratifiedKFold(n_splits=self.num_folds)
-            if num_classes == 2:
-                train_prediction_shape = (self.training_data.shape[0], 1)
-                test_prediction_shape = (self.test_data.shape[0], 1)
-            else:
-                train_prediction_shape = (self.training_data.shape[0], num_classes)
-                test_prediction_shape = (self.test_data.shape[0], num_classes)
+            train_prediction_shape = (self.training_data.shape[0], num_classes)
+            test_prediction_shape = (self.test_data.shape[0], num_classes)
         else:
             num_classes = -1
             self.y_enc = self.y
@@ -80,29 +79,39 @@ class Ensembler(object):
             test_prediction_dict[level] = np.zeros((test_prediction_shape[0],
                                                     test_prediction_shape[1] * len(model_dict[level])))
 
+        foldnum = 1
         for train_index, valid_index in kf.split(self.training_data, self.y_enc):
             for level in range(self.levels):
                 for model_num, model in enumerate(self.model_dict[level]):
-                    
+
+                    logger.info("Fold # %d. Training Level %d. Model # %d", foldnum, level, model_num)
                     model.fit(self.training_data[train_index], self.y_enc[train_index])
 
-                    if num_classes == 2 and self.task_type == 'classification':
-                        temp_train_predictions = model.predict_proba(self.training_data[valid_index])[:, 1]
-                        temp_test_predictions = model.predict_proba(self.test_data)[:, 1]
-                        train_prediction_dict[level][valid_index, model_num] = temp_train_predictions
-                        test_prediction_dict[level][:, model_num] += temp_test_predictions
+                    logger.info("Fold # %d. Predicting Level %d. Model # %d", foldnum, level, model_num)
 
-                    elif num_classes > 2 and self.task_type == 'classification':
+                    if self.task_type == 'classification':
                         temp_train_predictions = model.predict_proba(self.training_data[valid_index])
                         temp_test_predictions = model.predict_proba(self.test_data)
-                        train_prediction_dict[level][valid_index, (model_num*num_classes):(model_num*num_classes) + num_classes] = temp_train_predictions
-                        test_prediction_dict[level][:, (model_num * num_classes):(model_num * num_classes) + num_classes] = temp_test_predictions
+                        train_prediction_dict[level][valid_index, (model_num*num_classes):
+                                                     (model_num*num_classes) + num_classes] = temp_train_predictions
+                        test_prediction_dict[level][:, (model_num * num_classes):
+                                                    (model_num * num_classes) + num_classes] = temp_test_predictions
 
                     else:
                         temp_train_predictions = model.predict(self.training_data[valid_index])
                         temp_test_predictions = model.predict(self.test_data)
                         train_prediction_dict[level][valid_index, model_num] = temp_train_predictions
                         test_prediction_dict[level][:, model_num] += temp_test_predictions
+            foldnum += 1
+
+        for level in range(self.levels):
+            logger.info("Saving predictions for level # %d", level)
+            train_predictions_df = pd.DataFrame(train_prediction_dict[level])
+            test_predictions_df = pd.DataFrame(test_prediction_dict[level])
+            train_predictions_df.to_csv(os.path.join(self.save_path, "train_predictions_level_" + str(level) + ".csv"),
+                                        index=False, header=None)
+            test_predictions_df.to_csv(os.path.join(self.save_path, "test_predictions_level_" + str(level) + ".csv"),
+                                       index=False, header=None)
 
     def predict(self):
         pass
