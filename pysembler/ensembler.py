@@ -42,8 +42,11 @@ class Ensembler(object):
         self.y = None
         self.lbl_enc = None
         self.y_enc = None
+        self.train_prediction_dict = None
+        self.test_prediction_dict = None
+        self.num_classes = None
 
-    def fit(self, training_data, y, test_data):
+    def fit(self, training_data, y):
         """
         :param training_data: training data in tabular format
         :param y: binary, multi-class or regression
@@ -52,41 +55,38 @@ class Ensembler(object):
         """
 
         self.training_data = training_data
-        self.test_data = test_data
         self.y = y
 
         if self.task_type == 'classification':
-            num_classes = len(np.unique(self.y))
-            logger.info("Found %d classes", num_classes)
+            self.num_classes = len(np.unique(self.y))
+            logger.info("Found %d classes", self.num_classes)
             self.lbl_enc = LabelEncoder()
             self.y_enc = self.lbl_enc.fit_transform(self.y)
             kf = StratifiedKFold(n_splits=self.num_folds)
-            train_prediction_shape = (self.training_data.shape[0], num_classes)
-            test_prediction_shape = (self.test_data.shape[0], num_classes)
+            train_prediction_shape = (self.training_data.shape[0], self.num_classes)
+            test_prediction_shape = (self.test_data.shape[0], self.num_classes)
         else:
-            num_classes = -1
+            self.num_classes = -1
             self.y_enc = self.y
             kf = KFold(n_splits=self.num_folds)
             train_prediction_shape = (self.training_data.shape[0], 1)
             test_prediction_shape = (self.test_data.shape[0], 1)
 
-        train_prediction_dict = {}
-        test_prediction_dict = {}
+        self.train_prediction_dict = {}
+        self.test_prediction_dict = {}
         for level in range(self.levels):
-            train_prediction_dict[level] = np.zeros((train_prediction_shape[0],
-                                                     train_prediction_shape[1] * len(model_dict[level])))
+            self.train_prediction_dict[level] = np.zeros((train_prediction_shape[0],
+                                                          train_prediction_shape[1] * len(model_dict[level])))
 
-            test_prediction_dict[level] = np.zeros((test_prediction_shape[0],
-                                                    test_prediction_shape[1] * len(model_dict[level])))
+            self.test_prediction_dict[level] = np.zeros((test_prediction_shape[0],
+                                                         test_prediction_shape[1] * len(model_dict[level])))
 
         for level in range(self.levels):
 
             if level == 0:
                 temp_train = self.training_data
-                # temp_test = self.test_data
             else:
-                temp_train = train_prediction_dict[level - 1]
-                # temp_test = test_prediction_dict[level - 1]
+                temp_train = self.train_prediction_dict[level - 1]
 
             for model_num, model in enumerate(self.model_dict[level]):
                 validation_scores = []
@@ -99,12 +99,13 @@ class Ensembler(object):
 
                     if self.task_type == 'classification':
                         temp_train_predictions = model.predict_proba(temp_train[valid_index])
-                        train_prediction_dict[level][valid_index, (model_num * num_classes):(model_num * num_classes) +
-                                                     num_classes] = temp_train_predictions
+                        self.train_prediction_dict[level][valid_index,
+                        (model_num * self.num_classes):(model_num * self.num_classes) +
+                                                       self.num_classes] = temp_train_predictions
 
                     else:
                         temp_train_predictions = model.predict(temp_train[valid_index])
-                        train_prediction_dict[level][valid_index, model_num] = temp_train_predictions
+                        self.train_prediction_dict[level][valid_index, model_num] = temp_train_predictions
                     validation_score = self.optimize(self.y_enc[valid_index], temp_train_predictions)
                     validation_scores.append(validation_score)
                     logger.info("Level %d. Fold # %d. Model # %d. Validation Score = %f", level, foldnum, model_num,
@@ -115,13 +116,20 @@ class Ensembler(object):
                 logger.info("Level %d. Model # %d. Mean Score = %f. Std Dev = %f", level, model_num,
                             avg_score, std_score)
 
+            logger.info("Saving predictions for level # %d", level)
+            train_predictions_df = pd.DataFrame(self.train_prediction_dict[level])
+            train_predictions_df.to_csv(os.path.join(self.save_path, "train_predictions_level_" + str(level) + ".csv"),
+                                        index=False, header=None)
+
+    def predict(self, test_data):
+        self.test_data = test_data
         for level in range(self.levels):
             if level == 0:
                 temp_train = self.training_data
                 temp_test = self.test_data
             else:
-                temp_train = train_prediction_dict[level - 1]
-                temp_test = test_prediction_dict[level - 1]
+                temp_train = self.train_prediction_dict[level - 1]
+                temp_test = self.test_prediction_dict[level - 1]
 
             for model_num, model in enumerate(self.model_dict[level]):
 
@@ -132,29 +140,22 @@ class Ensembler(object):
 
                 if self.task_type == 'classification':
                     temp_test_predictions = model.predict_proba(temp_test)
-                    test_prediction_dict[level][:, (model_num * num_classes): (model_num * num_classes) +
-                                                num_classes] = temp_test_predictions
+                    self.test_prediction_dict[level][:, (model_num * self.num_classes): (model_num * self.num_classes) +
+                                                                                        self.num_classes] = temp_test_predictions
 
                 else:
                     temp_test_predictions = model.predict(temp_test)
-                    test_prediction_dict[level][:, model_num] = temp_test_predictions
+                    self.test_prediction_dict[level][:, model_num] = temp_test_predictions
 
-            logger.info("Saving predictions for level # %d", level)
-            train_predictions_df = pd.DataFrame(train_prediction_dict[level])
-            test_predictions_df = pd.DataFrame(test_prediction_dict[level])
-            train_predictions_df.to_csv(os.path.join(self.save_path, "train_predictions_level_" + str(level) + ".csv"),
-                                        index=False, header=None)
+            test_predictions_df = pd.DataFrame(self.test_prediction_dict[level])
             test_predictions_df.to_csv(os.path.join(self.save_path, "test_predictions_level_" + str(level) + ".csv"),
                                        index=False, header=None)
 
-    def predict(self):
-        pass
-
 
 if __name__ == '__main__':
-
     def new_roc(y_true, y_pred):
         return roc_auc_score(y_true, y_pred[:, 1])
+
 
     model_dict = {0: [ensemble.RandomForestClassifier(n_jobs=10, n_estimators=100),
                       ensemble.ExtraTreesClassifier(n_jobs=10, n_estimators=100)],
@@ -167,4 +168,5 @@ if __name__ == '__main__':
 
     ens = Ensembler(model_dict=model_dict, num_folds=5, task_type='classification',
                     optimize=new_roc, lower_is_better=False, save_path="../temp")
-    ens.fit(X, y, X_test)
+    ens.fit(X, y)
+    ens.predict(X_test)
