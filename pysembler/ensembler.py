@@ -64,22 +64,16 @@ class Ensembler(object):
             self.y_enc = self.lbl_enc.fit_transform(self.y)
             kf = StratifiedKFold(n_splits=self.num_folds)
             train_prediction_shape = (self.training_data.shape[0], self.num_classes)
-            test_prediction_shape = (self.test_data.shape[0], self.num_classes)
         else:
             self.num_classes = -1
             self.y_enc = self.y
             kf = KFold(n_splits=self.num_folds)
             train_prediction_shape = (self.training_data.shape[0], 1)
-            test_prediction_shape = (self.test_data.shape[0], 1)
 
         self.train_prediction_dict = {}
-        self.test_prediction_dict = {}
         for level in range(self.levels):
             self.train_prediction_dict[level] = np.zeros((train_prediction_shape[0],
                                                           train_prediction_shape[1] * len(model_dict[level])))
-
-            self.test_prediction_dict[level] = np.zeros((test_prediction_shape[0],
-                                                         test_prediction_shape[1] * len(model_dict[level])))
 
         for level in range(self.levels):
 
@@ -122,6 +116,15 @@ class Ensembler(object):
                                         index=False, header=None)
 
     def predict(self, test_data):
+        if self.task_type == 'classification':
+            test_prediction_shape = (self.test_data.shape[0], self.num_classes)
+        else:
+            test_prediction_shape = (self.test_data.shape[0], 1)
+
+        self.test_prediction_dict = {}
+        for level in range(self.levels):
+            self.test_prediction_dict[level] = np.zeros((test_prediction_shape[0],
+                                                         test_prediction_shape[1] * len(model_dict[level])))
         self.test_data = test_data
         for level in range(self.levels):
             if level == 0:
