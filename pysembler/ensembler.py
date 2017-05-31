@@ -50,7 +50,6 @@ class Ensembler(object):
         """
         :param training_data: training data in tabular format
         :param y: binary, multi-class or regression
-        :param test_data: test data in the same format as training data
         :return: chain of models to be used in prediction
         """
 
@@ -73,7 +72,7 @@ class Ensembler(object):
         self.train_prediction_dict = {}
         for level in range(self.levels):
             self.train_prediction_dict[level] = np.zeros((train_prediction_shape[0],
-                                                          train_prediction_shape[1] * len(model_dict[level])))
+                                                          train_prediction_shape[1] * len(self.model_dict[level])))
 
         for level in range(self.levels):
 
@@ -115,7 +114,10 @@ class Ensembler(object):
             train_predictions_df.to_csv(os.path.join(self.save_path, "train_predictions_level_" + str(level) + ".csv"),
                                         index=False, header=None)
 
+        return self.train_prediction_dict
+
     def predict(self, test_data):
+        self.test_data = test_data
         if self.task_type == 'classification':
             test_prediction_shape = (self.test_data.shape[0], self.num_classes)
         else:
@@ -124,7 +126,7 @@ class Ensembler(object):
         self.test_prediction_dict = {}
         for level in range(self.levels):
             self.test_prediction_dict[level] = np.zeros((test_prediction_shape[0],
-                                                         test_prediction_shape[1] * len(model_dict[level])))
+                                                         test_prediction_shape[1] * len(self.model_dict[level])))
         self.test_data = test_data
         for level in range(self.levels):
             if level == 0:
@@ -153,6 +155,8 @@ class Ensembler(object):
             test_predictions_df = pd.DataFrame(self.test_prediction_dict[level])
             test_predictions_df.to_csv(os.path.join(self.save_path, "test_predictions_level_" + str(level) + ".csv"),
                                        index=False, header=None)
+
+        return self.test_prediction_dict
 
 
 if __name__ == '__main__':
