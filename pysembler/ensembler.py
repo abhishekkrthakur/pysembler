@@ -1,6 +1,6 @@
 #! /usr/bin/env python
 import numpy as np
-from sklearn import ensemble, linear_model
+from sklearn import ensemble
 from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import StratifiedKFold, KFold
@@ -79,39 +79,66 @@ class Ensembler(object):
             test_prediction_dict[level] = np.zeros((test_prediction_shape[0],
                                                     test_prediction_shape[1] * len(model_dict[level])))
 
-        foldnum = 1
-        for train_index, valid_index in kf.split(self.training_data, self.y_enc):
-            for level in range(self.levels):
-                if level == 0:
-                    temp_train = self.training_data
-                    temp_test = self.test_data
-                else:
-                    temp_train = train_prediction_dict[level - 1]
-                    temp_test = test_prediction_dict[level - 1]
+        for level in range(self.levels):
 
-                for model_num, model in enumerate(self.model_dict[level]):
+            if level == 0:
+                temp_train = self.training_data
+                # temp_test = self.test_data
+            else:
+                temp_train = train_prediction_dict[level - 1]
+                # temp_test = test_prediction_dict[level - 1]
 
-                    logger.info("Fold # %d. Training Level %d. Model # %d", foldnum, level, model_num)
+            for model_num, model in enumerate(self.model_dict[level]):
+                validation_scores = []
+                foldnum = 1
+                for train_index, valid_index in kf.split(self.training_data, self.y_enc):
+                    logger.info("Training Level %d Fold # %d. Model # %d", level, foldnum, model_num)
                     model.fit(temp_train[train_index], self.y_enc[train_index])
 
-                    logger.info("Fold # %d. Predicting Level %d. Model # %d", foldnum, level, model_num)
+                    logger.info("Predicting Level %d. Fold # %d. Model # %d", level, foldnum, model_num)
 
                     if self.task_type == 'classification':
                         temp_train_predictions = model.predict_proba(temp_train[valid_index])
-                        temp_test_predictions = model.predict_proba(temp_test)
-                        train_prediction_dict[level][valid_index, (model_num*num_classes):
-                                                     (model_num*num_classes) + num_classes] = temp_train_predictions
-                        test_prediction_dict[level][:, (model_num * num_classes):
-                                                    (model_num * num_classes) + num_classes] = temp_test_predictions
+                        train_prediction_dict[level][valid_index, (model_num * num_classes):(model_num * num_classes) +
+                                                     num_classes] = temp_train_predictions
 
                     else:
                         temp_train_predictions = model.predict(temp_train[valid_index])
-                        temp_test_predictions = model.predict(temp_test)
                         train_prediction_dict[level][valid_index, model_num] = temp_train_predictions
-                        test_prediction_dict[level][:, model_num] += temp_test_predictions
-            foldnum += 1
+                    validation_score = self.optimize(self.y_enc[valid_index], temp_train_predictions)
+                    validation_scores.append(validation_score)
+                    logger.info("Level %d. Fold # %d. Model # %d. Validation Score = %f", level, foldnum, model_num,
+                                validation_score)
+                    foldnum += 1
+                avg_score = np.mean(validation_scores)
+                std_score = np.std(validation_scores)
+                logger.info("Level %d. Model # %d. Mean Score = %f. Std Dev = %f", level, model_num,
+                            avg_score, std_score)
 
         for level in range(self.levels):
+            if level == 0:
+                temp_train = self.training_data
+                temp_test = self.test_data
+            else:
+                temp_train = train_prediction_dict[level - 1]
+                temp_test = test_prediction_dict[level - 1]
+
+            for model_num, model in enumerate(self.model_dict[level]):
+
+                logger.info("Training Fulldata Level %d. Model # %d", level, model_num)
+                model.fit(temp_train, self.y_enc)
+
+                logger.info("Predicting Test Level %d. Model # %d", level, model_num)
+
+                if self.task_type == 'classification':
+                    temp_test_predictions = model.predict_proba(temp_test)
+                    test_prediction_dict[level][:, (model_num * num_classes): (model_num * num_classes) +
+                                                num_classes] = temp_test_predictions
+
+                else:
+                    temp_test_predictions = model.predict(temp_test)
+                    test_prediction_dict[level][:, model_num] = temp_test_predictions
+
             logger.info("Saving predictions for level # %d", level)
             train_predictions_df = pd.DataFrame(train_prediction_dict[level])
             test_predictions_df = pd.DataFrame(test_prediction_dict[level])
@@ -125,20 +152,19 @@ class Ensembler(object):
 
 
 if __name__ == '__main__':
-    model_dict = {0: [ensemble.RandomForestClassifier(),
-                      ensemble.ExtraTreesClassifier(),
-                      linear_model.LogisticRegression()],
 
-                  1: [ensemble.RandomForestClassifier(),
-                      ensemble.GradientBoostingClassifier()],
+    def new_roc(y_true, y_pred):
+        return roc_auc_score(y_true, y_pred[:, 1])
 
-                  2: [linear_model.LogisticRegression()]}
+    model_dict = {0: [ensemble.RandomForestClassifier(n_jobs=10, n_estimators=100),
+                      ensemble.ExtraTreesClassifier(n_jobs=10, n_estimators=100)],
 
-    print (model_dict)
-    X = np.random.rand(1000, 10)
+                  1: [ensemble.GradientBoostingClassifier(n_estimators=100, max_depth=7)]}
+
+    X = np.random.rand(1000, 100)
+    X_test = np.random.rand(100, 100)
     y = np.random.randint(0, 2, 1000)
-    X_test = np.random.rand(500, 10)
 
-    ens = Ensembler(model_dict=model_dict, num_folds=3, task_type='classification',
-                    optimize=roc_auc_score, lower_is_better=False, save_path="../temp")
+    ens = Ensembler(model_dict=model_dict, num_folds=5, task_type='classification',
+                    optimize=new_roc, lower_is_better=False, save_path="../temp")
     ens.fit(X, y, X_test)
