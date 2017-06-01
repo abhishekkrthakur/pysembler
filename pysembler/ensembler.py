@@ -1,6 +1,5 @@
 #! /usr/bin/env python
 import numpy as np
-from sklearn import ensemble
 from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import StratifiedKFold, KFold
@@ -179,29 +178,3 @@ class Ensembler(object):
                                        index=False, header=None)
 
         return self.test_prediction_dict
-
-
-if __name__ == '__main__':
-    def new_roc(y_true, y_pred):
-        return roc_auc_score(y_true, y_pred[:, 1])
-
-
-    model_dict = {0: [ensemble.RandomForestClassifier(n_jobs=10, n_estimators=100),
-                      ensemble.ExtraTreesClassifier(n_jobs=10, n_estimators=100)],
-
-                  1: [ensemble.GradientBoostingClassifier(n_estimators=100, max_depth=7)]}
-
-    X = np.random.rand(1000, 100)
-    X_test = np.random.rand(100, 100)
-    y = np.random.randint(0, 2, 1000)
-
-    lentrain = X.shape[0]
-    lentest = X_test.shape[0]
-
-    train_data_dict = {0: [X, X]}
-    test_data_dict = {0: [X_test, X_test]}
-
-    ens = Ensembler(model_dict=model_dict, num_folds=5, task_type='classification',
-                    optimize=new_roc, lower_is_better=False, save_path="../temp")
-    ens.fit(train_data_dict, y, lentrain)
-    ens.predict(test_data_dict, lentest)
