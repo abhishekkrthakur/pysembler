@@ -5,7 +5,7 @@ Credits
 Development Lead
 ----------------
 
-* Abhishek Thakur <abhishek.thakur@gmail.com>
+* Abhishek Thakur <abhishek4@gmail.com>
 
 Contributors
 ------------
